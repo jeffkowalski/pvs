@@ -126,7 +126,7 @@ class Pvs < Thor
     setup_logger
 
     begin
-      devices = with_rescue([RestClient::BadGateway, RestClient::GatewayTimeout, RestClient::Exceptions::OpenTimeout], @logger) do |_try|
+      devices = with_rescue([RestClient::BadGateway, RestClient::GatewayTimeout, RestClient::Exceptions::OpenTimeout, SocketError], @logger) do |_try|
         response = RestClient.get 'http://pvs-gateway.local/cgi-bin/dl_cgi?Command=DeviceList'
         JSON.parse response
       end
