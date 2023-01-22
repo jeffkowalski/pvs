@@ -1,5 +1,6 @@
 * Hardware
 https://blog.gruby.com/2020/04/28/monitoring-a-sunpower-solar-system/
+once installed, can monitor HAProxy with http://pvs-gateway.local:8080/
 
 * Install
 1. clone the git repo
