@@ -75,7 +75,7 @@ class Pvs < RecorderBotBase
 
   no_commands do
     def main
-      devices = with_rescue([RestClient::BadGateway, RestClient::GatewayTimeout, RestClient::InternalServerError, RestClient::Exceptions::OpenTimeout, RestClient::ServiceUnavailable, SocketError], @logger) do |_try|
+      devices = with_rescue([Errno::EHOSTUNREACH, RestClient::BadGateway, RestClient::GatewayTimeout, RestClient::InternalServerError, RestClient::Exceptions::OpenTimeout, RestClient::ServiceUnavailable, SocketError], @logger) do |_try|
         response = RestClient.get 'http://pvs-gateway.local/cgi-bin/dl_cgi?Command=DeviceList'
         JSON.parse response
       end
