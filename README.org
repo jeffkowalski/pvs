@@ -1,6 +1,6 @@
-* Hardware
-https://blog.gruby.com/2020/04/28/monitoring-a-sunpower-solar-system/
-once installed, can monitor HAProxy with http://pvs-gateway.local:8080/
+* Prerequisites
+This bot presumes there is an HTTPS gateway at pvs-gateway.local that communicates with the PVS.
+See HARDWARE.org for details.
 
 * Install
 1. clone the git repo
@@ -22,8 +22,3 @@ Options:
 
 Record current charge data to database
 #+END_EXAMPLE
-
-
-* See also
-https://github.com/ginoledesma/sunpower-pvs-exporter/blob/master/sunpower_pvs_notes.md
-https://www.solarpaneltalk.com/forum/solar-panels-for-home/solar-panel-system-equipment/19587-mirroring-intercepting-sunpower-monitoring-traffic/page6

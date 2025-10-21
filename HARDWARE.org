@@ -1,0 +1,258 @@
+#+TITLE: Raspberry Pi Zero 2 W Gateway for SunPower PVS5 with TLS Termination
+#+AUTHOR: Jeff Kowalski
+#+DATE: 2025-10-19
+#+PROPERTY: header-args :tangle yes :mkdirp yes
+#+OPTIONS: toc:2 num:t
+
+* Hardware Installation
+
+** Overview
+This document configures a Raspberry Pi Zero 2 W running Raspberry Pi OS Lite (64-bit, Debian 13 “trixie”) as a
+gateway between the *Wi-Fi network* and the *SunPower PVS5 installer Ethernet port*, providing HTTPS access
+with HAProxy performing TLS termination.
+
+based on https://blog.gruby.com/2020/04/28/monitoring-a-sunpower-solar-system/
+once installed, can monitor HAProxy with http://pvs-gateway.local:8080/
+
+** 1  Flash the Operating System
+1. Launch =Raspberry Pi Imager= (2025-10-01 release or newer).
+2. OS → *Raspberry Pi OS Lite (64-bit)*.
+3. Advanced Options (gear icon):
+   - Hostname :: =pvs-gateway=
+   - Enable SSH (password auth)
+   - Set username/password
+   - Configure Wi-Fi (SSID + PSK + country US)
+   - Set timezone / locale (optional)
+4. Write image → SD card → Insert into Pi Zero 2 W.
+5. On router, create a *DHCP reservation* for the Pi’s Wi-Fi MAC.
+6. Attach USB-Ethernet dongle from Pi to PVS5 RJ-45 installer port.
+7. Boot the Pi and SSH in:
+
+#+BEGIN_SRC shell
+ssh <youruser>@pvs-gateway.local
+#+END_SRC
+
+** 2  Update and Reboot
+#+BEGIN_SRC shell
+sudo apt update
+sudo apt full-upgrade -y
+sudo reboot
+#+END_SRC
+
+After reboot, SSH again.
+
+** 3  Prevent eth0 from becoming default gateway
+#+BEGIN_SRC shell
+sudo nmcli connection modify "Wired connection 1" ipv4.never-default yes
+sudo nmcli connection modify "Wired connection 1" ipv6.never-default yes
+sudo nmcli connection up "Wired connection 1"
+nmcli connection show "Wired connection 1" | grep never-default
+#+END_SRC
+
+** 4  Install HAProxy
+#+BEGIN_SRC shell
+sudo apt install -y haproxy
+#+END_SRC
+
+** 5  Create a Trusted Certificate with mkcert
+Install mkcert and generate a local certificate for =pvs-gateway.local=.
+
+#+BEGIN_SRC shell
+sudo apt install -y mkcert libnss3-tools
+mkcert -install
+mkcert pvs-gateway.local
+sudo mkdir -p /etc/haproxy/certs
+sudo sh -c 'cat pvs-gateway.local.pem pvs-gateway.local-key.pem \
+  > /etc/haproxy/certs/pvs-gateway.local.pem'
+sudo chmod 600 /etc/haproxy/certs/pvs-gateway.local.pem
+#+END_SRC
+
+Repeat =`mkcert -install`= on any client computer so its browser trusts the mkcert root.
+
+** 6  Configure HAProxy for TLS Termination
+Replace =/etc/haproxy/haproxy.cfg= with the following:
+
+#+BEGIN_SRC conf :tangle /etc/haproxy/haproxy.cfg
+# HAProxy configuration for PVS5 Gateway with TLS Termination
+
+global
+    log /dev/log local0
+    log /dev/log local1 notice
+    tune.ssl.default-dh-param 2048
+
+defaults
+    log     global
+    mode    http
+    option  httplog
+    option  dontlognull
+    timeout connect 5s
+    timeout client  60s
+    timeout server  60s
+
+# --- HTTP frontend (port 80) ---
+frontend http-in
+    mode http
+    bind *:80
+    http-request redirect scheme https code 301 unless { ssl_fc }
+    default_backend be_http
+
+# --- HTTPS frontend (port 443, TLS termination) ---
+frontend https-in
+    mode http
+    option httplog
+    bind *:443 ssl crt /etc/haproxy/certs/pvs-gateway.local.pem
+    default_backend be_http
+
+# --- Backend: forward to PVS5 via plain HTTP ---
+backend be_http
+    mode http
+    server pvs5 172.27.153.1:80 check
+
+# --- HAProxy statistics (port 8080, local only) ---
+listen stats
+    bind *:8080
+    stats enable
+    stats uri /
+    stats refresh 10s
+    stats admin if LOCALHOST
+#+END_SRC
+
+** 7  Validate and Reload HAProxy
+#+BEGIN_SRC shell
+sudo haproxy -c -f /etc/haproxy/haproxy.cfg
+sudo systemctl reload haproxy
+#+END_SRC
+
+Confirm listening ports:
+
+#+BEGIN_SRC shell
+sudo ss -tlnp | egrep ':80|:443|:8080'
+#+END_SRC
+
+** 8  Test Connectivity and Authentication
+Verify that the PVS5 is reachable via HTTP from the Pi:
+
+#+BEGIN_SRC shell
+curl -v http://172.27.153.1/cgi-bin/dl_cgi?Command=DeviceList
+#+END_SRC
+
+Then test through HAProxy with TLS termination:
+
+#+BEGIN_SRC shell
+ip=pvs-gateway.local
+pass=C1876
+auth=$(echo -n "ssm_owner:$pass" | base64)
+
+curl -v \
+  -b cookies.txt -c cookies.txt \
+  -H "Authorization: Basic $auth" \
+  "https://$ip/auth?login"
+#+END_SRC
+
+If clients trust mkcert, no =-k= is needed; otherwise, use =-k= temporarily.
+
+** 9  Enable HAProxy at Boot
+#+BEGIN_SRC shell
+sudo systemctl enable haproxy
+#+END_SRC
+
+** 10  Optional Diagnostics
+#+BEGIN_SRC shell
+# Show active interfaces
+ip -br a
+
+# Confirm HAProxy service health
+sudo systemctl status haproxy
+
+# View logs (journalctl integrates with /dev/log)
+sudo journalctl -u haproxy -e
+#+END_SRC
+
+** Result
+After completion, you can access your SunPower gateway securely via:
+- =[[https://pvs-gateway.local/]]=
+- HTTPS traffic terminated by HAProxy, then forwarded as HTTP to =172.27.153.1:80=.
+- Browser connection is trusted when mkcert root CA is installed.
+
+* References
+https://chatgpt.com/c/68f57c5a-5a30-832a-bd74-453f5f2d2b36
+https://github.com/ginoledesma/sunpower-pvs-exporter/blob/master/sunpower_pvs_notes.md
+https://www.solarpaneltalk.com/forum/solar-panels-for-home/solar-panel-system-equipment/19587-mirroring-intercepting-sunpower-monitoring-traffic/page6
+https://github.com/krbaker/hass-sunpower/issues/125
+https://github.com/SunStrong-Management/pypvs/blob/main/doc/LocalAPI.md
+https://github.com/SunStrong-Management/pypvs/blob/main/doc/varserver-variables-public.csv
+
+* Debugging SunPower PVS5 Live Data via HTTPS
+
+#+PROPERTY: header-args:shell :session pvs :results output :exports both
+
+** Define connection variables (read pass from YAML; robust for colon key)
+#+BEGIN_SRC shell
+# Detect local vs. remote context
+if [[ "$(hostname)" == "pvs-gateway"* ]]; then
+    ip="172.27.152.1"        # local installer port
+else
+    ip="pvs-gateway.local"   # remote HTTPS via HAProxy
+fi
+
+credfile="$HOME/.credentials/pvs.yaml"
+
+# Extract the value for ':pvs_serial_last5:' using awk
+if [[ -f "$credfile" ]]; then
+    pass=$(awk -F': ' '/pvs_serial_last5/ {gsub(/"/,"",$2); print $2}' "$credfile")
+else
+    echo "Error: credentials file not found at $credfile" >&2
+    exit 1
+fi
+
+user="ssm_owner"
+auth=$(echo -n "${user}:${pass}" | base64)
+
+req() { curl -s -k -b cookies.txt -c cookies.txt -H "Authorization: basic $auth" "$@" | jq -M; }
+export -f req
+
+echo "Running on:  $(hostname)"
+echo "Target IP:   $ip"
+echo "User:        $user"
+echo "Password:    $pass"
+echo "Auth token:  $auth"
+#+END_SRC
+
+** Authenticate and obtain session cookie
+#+BEGIN_SRC shell
+req "https://$ip/auth?login"
+#+END_SRC
+
+** Inspect stored cookies
+#+BEGIN_SRC shell
+cat cookies.txt
+#+END_SRC
+
+** Query firmware version and MAC address
+#+BEGIN_SRC shell
+req "https://$ip/vars?name=/sys/info/sw_rev,/sys/info/lmac"
+#+END_SRC
+
+** Query info using =old API=
+Note missing authorization (-H flag), so we can't use req
+#+BEGIN_SRC shell
+curl -s -k \
+  -b cookies.txt \
+  -c cookies.txt \
+  "https://$ip/cgi-bin/dl_cgi/supervisor/info"
+#+END_SRC
+  
+** Query live system data
+#+BEGIN_SRC shell
+req "https://$ip/vars?match=livedata&fmt=obj&cache=ldata"
+#+END_SRC
+
+** Query inverter data (expected 400 for PVS5)
+#+BEGIN_SRC shell
+req "https://$ip/vars?match=inverter/data&fmt=obj&cache=mdata"
+#+END_SRC
+
+** Query meter data (expected 400 for PVS5)
+#+BEGIN_SRC shell
+req "https://$ip/vars?match=meter/data&fmt=obj&cache=mdata"
+#+END_SRC
