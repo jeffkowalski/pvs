@@ -186,9 +186,8 @@ https://github.com/SunStrong-Management/pypvs/blob/main/doc/varserver-variables-
 
 #+PROPERTY: header-args:shell :session pvs :results output :exports both
 
-** Define connection variables (read pass from YAML; robust for colon key)
+** Authenticate and obtain session cookie
 #+BEGIN_SRC shell
-# Detect local vs. remote context
 if [[ "$(hostname)" == "pvs-gateway"* ]]; then
     ip="172.27.152.1"        # local installer port
 else
@@ -208,19 +207,17 @@ fi
 user="ssm_owner"
 auth=$(echo -n "${user}:${pass}" | base64)
 
-req() { curl -s -k -b cookies.txt -c cookies.txt -H "Authorization: basic $auth" "$@" | jq -M; }
-export -f req
-
 echo "Running on:  $(hostname)"
 echo "Target IP:   $ip"
 echo "User:        $user"
 echo "Password:    $pass"
 echo "Auth token:  $auth"
-#+END_SRC
 
-** Authenticate and obtain session cookie
-#+BEGIN_SRC shell
-req "https://$ip/auth?login"
+curl -s -k \
+  -b cookies.txt \
+  -c cookies.txt \
+  -H "Authorization: basic $auth" \
+  "https://$ip/auth?login" | jq -M; 
 #+END_SRC
 
 ** Inspect stored cookies
@@ -228,13 +225,86 @@ req "https://$ip/auth?login"
 cat cookies.txt
 #+END_SRC
 
+** Query all variables which match a substring and output as an object
+#+BEGIN_SRC shell
+curl -s \
+     -k \
+     -b cookies.txt \
+     -c cookies.txt \
+     "https://$ip/vars?match=rev&fmt=obj" | jq -M
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+{
+  "values": [
+    {
+      "name": "/sys/info/hwrev",
+      "value": "3.3"
+    },
+    {
+      "name": "/sys/info/fwrev",
+      "value": "TBD"
+    },
+    {
+      "name": "/sys/info/sw_rev",
+      "value": "0.0.25.5408"
+    }
+  ],
+  "count": 3
+}
+#+end_example
+
+Expected
+#+BEGIN_EXAMPLE
+{
+  "/sys/info/hwrev": "6.03",
+  "/sys/info/fwrev": " Major 2, Revision 0x00000001, Build 3",
+  "/sys/info/sw_rev": "2025.06.24.61840"
+}
+#+END_EXAMPLE
 ** Query firmware version and MAC address
 #+BEGIN_SRC shell
-req "https://$ip/vars?name=/sys/info/sw_rev,/sys/info/lmac"
+curl -s -k \
+  -b cookies.txt \
+  -c cookies.txt \
+  "https://$ip/vars?name=/sys/info/model,/sys/info/hwrev,/sys/info/fwrev,/sys/info/sw_rev" | jq -M
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+{
+  "values": [
+    {
+      "name": "/sys/info/model",
+      "value": "PVS5"
+    },
+    {
+      "name": "/sys/info/hwrev",
+      "value": "3.3"
+    },
+    {
+      "name": "/sys/info/fwrev",
+      "value": "TBD"
+    },
+    {
+      "name": "/sys/info/sw_rev",
+      "value": "0.0.25.5408"
+    }
+  ],
+  "count": 4
+}
+#+end_example
+
+** Query all system info
+#+BEGIN_SRC shell
+curl -s -k \
+  -b cookies.txt \
+  -c cookies.txt \
+  "https://$ip/vars?match=/sys/info/" | jq -M
 #+END_SRC
 
 ** Query info using =old API=
-Note missing authorization (-H flag), so we can't use req
 #+BEGIN_SRC shell
 curl -s -k \
   -b cookies.txt \
@@ -244,15 +314,48 @@ curl -s -k \
   
 ** Query live system data
 #+BEGIN_SRC shell
-req "https://$ip/vars?match=livedata&fmt=obj&cache=ldata"
+curl -s -k \
+  -b cookies.txt \
+  -c cookies.txt \
+  "https://$ip/vars?match=livedata&fmt=obj" | jq -M
 #+END_SRC
 
 ** Query inverter data (expected 400 for PVS5)
 #+BEGIN_SRC shell
-req "https://$ip/vars?match=inverter/data&fmt=obj&cache=mdata"
+curl -s -k \
+  -b cookies.txt \
+  -c cookies.txt \
+  "https://$ip/vars?match=inverter/data&fmt=obj&cache=mdata" | jq -M
 #+END_SRC
 
 ** Query meter data (expected 400 for PVS5)
 #+BEGIN_SRC shell
-req "https://$ip/vars?match=meter/data&fmt=obj&cache=mdata"
+curl -s -k \
+  -b cookies.txt \
+  -c cookies.txt \
+  "https://$ip/vars?match=meter/data&fmt=obj" | jq -M
+#+END_SRC
+
+** Query meter data
+#+BEGIN_SRC shell
+curl -s -k \
+  -b cookies.txt \
+  -c cookies.txt \
+  "https://$ip/vars?match=/sys/devices/meter/&fmt=obj" | jq -M
+#+END_SRC
+
+** Query inverter data
+#+BEGIN_SRC shell
+curl -s -k \
+  -b cookies.txt \
+  -c cookies.txt \
+  "https://$ip/vars?match=/sys/devices/inverter/&fmt=obj" | jq -M
+#+END_SRC
+
+** Data retrieval under =old API= no longer works (expect 403 error)
+#+BEGIN_SRC shell
+curl -s -k \
+  -b cookies.txt \
+  -c cookies.txt \
+  "https://$ip/cgi-bin/dl_cgi?Command=DeviceList"
 #+END_SRC

@@ -5,105 +5,267 @@ require 'bundler/setup'
 Bundler.require(:default)
 
 # rubocop:disable Layout/HashAlignment
+# Mapping of new varserver variables to their types and purposes
+# Based on doc/varserver-variables-public.csv
 MEASURES = {
-  'CAL0'                => { type: 'to_s', kind: nil },       # ["50", "100"]   The calibration-reference CT sensor size (50A for production, 100A for consumption)
-  'CURTIME'             => { type: nil,    kind: nil },       # ["2020,11,30,04,25,49"
-  'DATATIME'            => { type: nil,    kind: nil },       # ["2020,11,30,04,25,00"
-  'DESCR'               => { type: 'to_s', kind: :property }, # ["Power Meter PVS5M540952p", "Power Meter PVS5M540952c", "Inverter 450051826006667", "Inverter 450051826015034"
-  'DETAIL'              => { type: 'to_s', kind: nil },       # ["detail"]
-  'DEVICE_TYPE'         => { type: 'to_s', kind: :property }, # ["PVS", "Power Meter", "Inverter"]
-  'HWVER'               => { type: 'to_s', kind: nil },       # ["3.3"]
-  'ISDETAIL'            => { type: 'to_s', kind: nil },       # [true]
-  'MODEL'               => { type: 'to_s', kind: :property }, # ["PV Supervisor PVS5", "PVS5M0400p", "PVS5M0400c", "AC_Module_Type_D"]
-  'MOD_SN'              => { type: 'to_s', kind: nil },       # [""]
-  'NMPLT_SKU'           => { type: 'to_s', kind: nil },       # [""]
-  'OPERATION'           => { type: 'to_s', kind: nil },       # ["noop"]
-  'PORT'                => { type: 'to_s', kind: nil },       # [""]
-  'SERIAL'              => { type: 'to_s', kind: :property }, # ["ZT163185000441C1876", "PVS5M540952p", "PVS5M540952c", "450051826006667", "450051826015034"
-  'STATE'               => { type: 'to_s', kind: :property }, # ["working", "error"]
-  'STATEDESCR'          => { type: 'to_s', kind: nil },       # ["Working", "Error"]
-  'SWVER'               => { type: 'to_s', kind: nil },       # ["2020.1, Build 3008", "4", "1057177359", "1078804428"]
-  'TYPE'                => { type: 'to_s', kind: :property }, # ["PVS5-METER-P", "PVS5-METER-C", "SOLARBRIDGE"]
-  'ct_scl_fctr'         => { type: 'to_i', kind: :metric },   # ["50", "100"]   The CT sensor size (50A for production, 100A/200A for consumption)
-  'dl_comm_err'         => { type: 'to_i', kind: :metric },   # ["500"]         Number of comms errors
-  'dl_cpu_load'         => { type: 'to_f', kind: :metric },   # ["0.09"]        1-minute load average
-  'dl_err_count'        => { type: 'to_i', kind: :metric },   # ["0"]           Number of errors detected since last report
-  'dl_flash_avail'      => { type: 'to_i', kind: :metric },   # ["12484"]       Amount of free space, in KiB (assumed 1GiB of storage)
-  'dl_mem_used'         => { type: 'to_i', kind: :metric },   # ["31660"]       Amount of memory used, in KiB (assumed 1GiB of RAM)
-  'dl_scan_time'        => { type: 'to_i', kind: :metric },   # ["1"]
-  'dl_skipped_scans'    => { type: 'to_i', kind: :metric },   # ["0"]
-  'dl_untransmitted'    => { type: 'to_i', kind: :metric },   # ["789853"]      Number of untransmitted events/records
-  'dl_uptime'           => { type: 'to_i', kind: :metric },   # ["2878431"]     Number of seconds the system has been running
-  'freq_hz'             => { type: 'to_f', kind: :metric },   # "59.99"         Operating Frequency
-  'i_3phsum_a'          => { type: 'to_f', kind: :metric },   # ["0.04", "0"]   AC Current (amperes)
-  'i_mppt1_a'           => { type: 'to_f', kind: :metric },   # ["0.1"]         DC Current (amperes)
-  'ltea_3phsum_kwh'     => { type: 'to_f', kind: :metric },   # ["905.7943"     Total Net Energy (kilowatt-hours)
-  'net_ltea_3phsum_kwh' => { type: 'to_f', kind: :metric },   # ["25370.4", "0"]
-  'origin'              => { type: 'to_s', kind: :metric },   # ["data_logger"]
-  'p_3phsum_kw'         => { type: 'to_f', kind: :metric },   # ["0.0015"]      Average real power (kilowatts)
-  'p_mpptsum_kw'        => { type: 'to_f', kind: :metric },   # ["0.0004"]      DC Power (kilowatts)
-  'panid'               => { type: 'to_i', kind: :metric },   # [1446673874]
-  'q_3phsum_kvar'       => { type: 'to_f', kind: :metric },   # ["-0.8082", "0"]  Reactive power (kilovolt-amp-reactive)
-  's_3phsum_kva'        => { type: 'to_f', kind: :metric },   # ["0.8155", "0"]  Apparent power (kilovolt-amp)
-  'stat_ind'            => { type: 'to_i', kind: :metric },   # ["0"]
-  't_htsnk_degc'        => { type: 'to_f', kind: :metric },   # ["33.55"        Heatsink temperature (degrees Celsius)
-  'tot_pf_rto'          => { type: 'to_f', kind: :metric },   # ["0"]           Power Factor ratio (real power / apparent power)
-  'v_mppt1_v'           => { type: 'to_f', kind: :metric },   # ["46.95"        DC Voltage (volts)
-  'vln_3phavg_v'        => { type: 'to_f', kind: :metric }    # ["244.07"       AC Voltage (volts)
+  # System-wide livedata
+  '/sys/livedata/time'                => { type: 'to_i', kind: :timestamp },
+  '/sys/livedata/pv_p'                => { type: 'to_f', kind: :metric },    # Production Power (kW)
+  '/sys/livedata/pv_en'               => { type: 'to_f', kind: :metric },    # Production Energy (kWh)
+  '/sys/livedata/net_p'               => { type: 'to_f', kind: :metric },    # Net Consumption Power (kW)
+  '/sys/livedata/net_en'              => { type: 'to_f', kind: :metric },    # Net Consumption Energy (kWh)
+  '/sys/livedata/site_load_p'         => { type: 'to_f', kind: :metric },    # Site Load Power (kW)
+  '/sys/livedata/site_load_en'        => { type: 'to_f', kind: :metric },    # Site Load Energy (kWh)
+  '/sys/livedata/ess_p'               => { type: 'to_f', kind: :metric },    # Battery Power (kW)
+  '/sys/livedata/ess_en'              => { type: 'to_f', kind: :metric },    # Battery Energy (kWh)
+  '/sys/livedata/soc'                 => { type: 'to_f', kind: :metric },    # Battery State of Charge (%)
+  '/sys/livedata/backupTimeRemaining' => { type: 'to_i', kind: :metric },    # Battery Backup Time (minutes)
+
+  # System info
+  '/sys/info/serialnum'               => { type: 'to_s', kind: :property },
+  '/sys/info/model'                   => { type: 'to_s', kind: :property },
+  '/sys/info/sw_rev'                  => { type: 'to_s', kind: :property },
+  '/sys/info/hwrev'                   => { type: 'to_s', kind: :property },
+
+  # Inverter data fields (with {index} placeholder)
+  'freqHz'                            => { type: 'to_f', kind: :metric },    # Frequency in Hz
+  'iMppt1A'                           => { type: 'to_f', kind: :metric },    # DC Current (amperes)
+  'ltea3phsumKwh'                     => { type: 'to_f', kind: :metric },    # Lifetime energy (kWh)
+  'pMppt1Kw'                          => { type: 'to_f', kind: :metric },    # DC Power (kW)
+  'p3phsumKw'                         => { type: 'to_f', kind: :metric },    # AC Power (kW)
+  'tHtsnkDegc'                        => { type: 'to_f', kind: :metric },    # Heatsink temperature (°C)
+  'vMppt1V'                           => { type: 'to_f', kind: :metric },    # DC Voltage (volts)
+  'vln3phavgV'                        => { type: 'to_f', kind: :metric },    # AC Voltage (volts)
+  'prodMdlNm'                         => { type: 'to_s', kind: :property },  # Model name
+  'sn'                                => { type: 'to_s', kind: :property },  # Serial number
+  'msmtEps'                           => { type: 'to_s', kind: :timestamp }, # Measurement timestamp
+
+  # Meter data fields
+  'ctSclFctr'                         => { type: 'to_i', kind: :metric },    # CT scaling factor
+  'i1A'                               => { type: 'to_f', kind: :metric },    # Phase 1 current (A)
+  'i2A'                               => { type: 'to_f', kind: :metric },    # Phase 2 current (A)
+  'netLtea3phsumKwh'                  => { type: 'to_f', kind: :metric },    # Net lifetime energy (kWh)
+  'posLtea3phsumKwh'                  => { type: 'to_f', kind: :metric },    # Positive lifetime energy (kWh)
+  'negLtea3phsumKwh'                  => { type: 'to_f', kind: :metric },    # Negative lifetime energy (kWh)
+  'p1Kw'                              => { type: 'to_f', kind: :metric },    # Phase 1 power (kW)
+  'p2Kw'                              => { type: 'to_f', kind: :metric },    # Phase 2 power (kW)
+  'q3phsumKvar'                       => { type: 'to_f', kind: :metric },    # Reactive power (kVAR)
+  's3phsumKva'                        => { type: 'to_f', kind: :metric },    # Apparent power (kVA)
+  'totPfRto'                          => { type: 'to_f', kind: :metric },    # Power factor ratio
+  'v12V'                              => { type: 'to_f', kind: :metric },    # Phase 1-2 voltage (V)
+  'v1nV'                              => { type: 'to_f', kind: :metric },    # Phase 1-neutral voltage (V)
+  'v2nV'                              => { type: 'to_f', kind: :metric }     # Phase 2-neutral voltage (V)
 }.freeze
 # rubocop:enable Layout/HashAlignment
 
 class Pvs < RecorderBotBase
-  desc 'show-measures', 'print mesures associated with pvs-monitored devices'
-  def show_measures
-    response = RestClient.get 'http://pvs-gateway.local/cgi-bin/dl_cgi?Command=DeviceList'
-    devices = JSON.parse response
-    all_keys = Set.new
-    example = {}
-    devices['devices'].each do |device|
-      all_keys << device.keys.to_set
-      device.each_key do |key|
-        example[key] ||= Set.new
-        example[key] << device[key]
-      end
-    end
-    all_keys.flatten.sort.each do |key|
-      print format("%<name>-21s => {type: %<type>s, kind: :tag }, # %<example>s\n",
-                   { name: "'#{key}'", type: example[key].to_a[0].class, example: example[key].to_a })
-    end
-  end
-
   no_commands do
-    def main
-      devices = with_rescue([Errno::ECONNREFUSED, Errno::EHOSTUNREACH, RestClient::BadGateway, RestClient::GatewayTimeout, RestClient::InternalServerError, RestClient::Exceptions::OpenTimeout, RestClient::ServiceUnavailable, SocketError], @logger) do |_try|
-        response = RestClient.get 'http://pvs-gateway.local/cgi-bin/dl_cgi?Command=DeviceList'
-        JSON.parse response
+    def authenticate
+      # Load credentials - expecting :pvs_serial_last5: in the YAML file
+      credentials = load_credentials
+      password = credentials[:pvs_serial_last5] || credentials['pvs_serial_last5']
+
+      if password.nil? || password.empty?
+        @logger.error 'Missing PVS serial last 5 digits in credentials'
+        raise 'Authentication credentials not properly configured'
       end
-      @logger.info "request: #{devices['result']}"
-      @logger.debug devices
+
+      # Create auth header
+      auth_string = Base64.strict_encode64("ssm_owner:#{password}")
+
+      # Create temporary cookie file
+      cookie_file = Tempfile.new(['pvs_cookies', '.txt'])
+
+      # Authenticate and get session cookie
+      auth_response = with_rescue([Errno::ECONNREFUSED, Errno::EHOSTUNREACH,
+                                   RestClient::Exceptions::OpenTimeout,
+                                   RestClient::ServiceUnavailable, SocketError], @logger) do |_try|
+        RestClient::Request.execute(
+          method: :get,
+          url: 'https://pvs-gateway.local/auth?login',
+          headers: {
+            'Authorization' => "Basic #{auth_string}"
+          },
+          cookies: {},
+          verify_ssl: false
+        )
+      end
+
+      # Extract session cookie from response
+      session_cookie = auth_response.cookies['session']
+
+      if session_cookie.nil?
+        @logger.error 'Failed to obtain session cookie'
+        raise 'Authentication failed'
+      end
+
+      # Store cookie in tempfile for subsequent requests
+      cookie_file.write("# Netscape HTTP Cookie File\n")
+      cookie_file.write("pvs-gateway.local\tFALSE\t/\tTRUE\t0\tsession\t#{session_cookie}\n")
+      cookie_file.flush
+
+      @logger.info 'Successfully authenticated with PVS'
+      cookie_file
+    end
+
+    def fetch_varserver_data(cookie_file, query_params)
+      # Read session cookie from file
+      cookie_file.rewind
+      session_cookie = nil
+      cookie_file.each_line do |line|
+        next if line.start_with?('#')
+
+        parts = line.strip.split("\t")
+        session_cookie = parts.last if parts[-2] == 'session'
+      end
+
+      url = "https://pvs-gateway.local/vars?#{query_params}"
+
+      response = with_rescue([Errno::ECONNREFUSED, Errno::EHOSTUNREACH,
+                              RestClient::Exceptions::OpenTimeout,
+                              RestClient::ServiceUnavailable, SocketError], @logger) do |_try|
+        RestClient::Request.execute(
+          method: :get,
+          url: url,
+          cookies: { session: session_cookie },
+          verify_ssl: false
+        )
+      end
+
+      JSON.parse(response.body)
+    end
+
+    def data_as_obj(data)
+      device_data = Hash.new { |h, k| h[k] = {} }
+
+      regex = %r{\A/sys/devices/(?<device_type>[^/]+)/(?<idx>\d+)/(?<metric>[^/]+)\z}
+
+      data['values'].each do |entry|
+        name  = entry['name']
+        value = entry['value']
+
+        m = regex.match(name) or next # skip this entry unless it matches
+
+        out_key = "/sys/devices/#{m[:idx]}/#{m[:device_type]}/data"
+        device_data[out_key][m[:metric]] = value
+      end
+
+      device_data
+    end
+
+    def record_values(values, timestamp, tags, influxdb)
+      data = []
+      values.each do |key, value|
+        measure = MEASURES[key]
+        next unless measure && measure[:kind] == :metric
+
+        metric_name = key.split('/').last
+        data.push({
+                    series: metric_name,
+                    values: { value: value.send(MEASURES[key][:type]) },
+                    tags: tags,
+                    timestamp: timestamp
+                  })
+      end
+
+      influxdb.write_points(data) unless options[:dry_run]
+    end
+
+    def process_system_data(system_data, influxdb)
+      # Process system-wide livedata
+      return if system_data.nil? || system_data.empty?
+
+      system_values = system_data['values'].each_with_object({}) do |entry, hash|
+        hash[entry['name']] = entry['value']
+      end
+      timestamp = system_values['/sys/livedata/time'].to_i
+
+      tags = { device_type: 'system' }
+      record_values(system_values, timestamp, tags, influxdb)
+    end
+
+    def process_device_data(device_data, device_type, influxdb)
+      return if device_data.nil? || device_data.empty?
+
+      device_data.each do |device_path, device_values|
+        next unless device_values.is_a?(Hash)
+
+        # (e.g., /sys/devices/11/inverter/data)
+        %r{/sys/devices/(\d+)/([^/]+)/data} =~ device_path
+        device_index = Regexp.last_match(1)
+        device_type  = Regexp.last_match(2)
+        next unless device_index
+
+        data = []
+        tags = {
+          device_type: device_type,
+          device_index: format('%02d', device_index)
+        }
+        # Add device properties as tags
+        tags[:serial] = device_values['sn'] if device_values['sn']
+        tags[:model] = device_values['prodMdlNm'] if device_values['prodMdlNm']
+
+        # Parse timestamp if available
+        timestamp = nil
+        if device_values['msmtEps']
+          begin
+            timestamp = DateTime.parse(device_values['msmtEps']).to_time.to_i
+          rescue StandardError => e
+            @logger.warn "Failed to parse timestamp: #{e.message}"
+          end
+        end
+
+        record_values(device_values, timestamp, tags, influxdb)
+
+        # Process metrics
+        device_values.each do |key, value|
+          measure = MEASURES[key]
+          next unless measure && measure[:kind] == :metric
+
+          begin
+            metric_value = value.send(measure[:type])
+            data.push({
+                        series: key,
+                        values: { value: metric_value },
+                        tags: tags,
+                        timestamp: timestamp
+                      })
+          rescue StandardError => e
+            @logger.warn "Failed to process #{key}: #{e.message}"
+          end
+        end
+
+        pp data if @logger.level == Logger::DEBUG
+        influxdb.write_points(data) unless options[:dry_run] || data.empty?
+      end
+    end
+
+    def main
+      session = authenticate
+
+      # Fetch data using new API with caching for efficiency
+      livedata = fetch_varserver_data(session, 'match=livedata')
+      @logger.debug "Livedata: #{livedata}"
+
+      meter_data = data_as_obj(fetch_varserver_data(session, 'match=/sys/devices/meter/'))
+      @logger.debug "Meter data: #{meter_data}"
+
+      inverter_data = data_as_obj(fetch_varserver_data(session, 'match=/sys/devices/inverter/'))
+      @logger.debug "Inverter data: #{inverter_data}"
 
       influxdb = options[:dry_run] ? nil : (InfluxDB::Client.new 'pvs')
 
-      devices['devices'].each do |device|
-        data = []
-        tags = {}
-        timestamp = nil
-        device.each_key do |key|
-          timestamp = DateTime.new(*device[key].split(',').map(&:to_i)).to_time.to_i if key == 'DATATIME'
-          case MEASURES[key][:kind]
-          when :metric
-            data.push({ series: key, values: { value: device[key].send(MEASURES[key][:type]) } })
-          when :property
-            tags[key] = device[key].send(MEASURES[key][:type])
-          end
-        end
-        data = data.map do |datum|
-          datum.merge!(tags: tags, timestamp: timestamp)
-          datum
-        end
-        pp data if @logger.level == Logger::DEBUG
-        influxdb.write_points data unless options[:dry_run]
-      end
+      process_system_data(livedata, influxdb)
+
+      # Process meter data
+      process_device_data(meter_data, 'meter', influxdb)
+
+      # Process inverter data
+      process_device_data(inverter_data, 'inverter', influxdb)
+
+      @logger.info 'Data collection complete'
+    ensure
+      session&.close if session.is_a?(Tempfile)
     end
   end
 end
