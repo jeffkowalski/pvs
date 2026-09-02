@@ -253,7 +253,7 @@ class Pvs < RecorderBotBase
       inverter_data = data_as_obj(fetch_varserver_data(session, 'match=/sys/devices/inverter/'))
       @logger.debug "Inverter data: #{inverter_data}"
 
-      influxdb = options[:dry_run] ? nil : (InfluxDB::Client.new 'pvs')
+      influxdb = new_influxdb_client 'pvs'
 
       process_system_data(livedata, influxdb)
 
